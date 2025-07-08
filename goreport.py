@@ -1566,9 +1566,25 @@ Individuals Who Submitted: {self.total_unique_submitted}
         password_users = defaultdict(list)
         password_entropy = []
         domain_counter = Counter()
+        geo_counter = Counter()
+        device_counter = Counter()
+        time_to_action = []
+        risk_scores = {}
         for target in self.results:
             domain = target.email.split('@')[-1] if '@' in target.email else ''
             domain_counter[domain] += 1
+            # Device/OS/Geo
+            for event in self.timeline:
+                if hasattr(event, 'email') and event.email == target.email:
+                    details = event.details if isinstance(event.details, dict) else {}
+                    ua = details.get('browser', {}).get('user-agent', '') if 'browser' in details else ''
+                    if ua:
+                        from user_agents import parse
+                        user_agent = parse(ua)
+                        device_counter[user_agent.device.family] += 1
+                        geo = details.get('browser', {}).get('address', '')
+                        if geo:
+                            geo_counter[geo] += 1
         for user in self.results:
             for event in self.timeline:
                 if hasattr(event, 'email') and event.email == user.email:
@@ -1627,7 +1643,8 @@ Individuals Who Submitted: {self.total_unique_submitted}
                     'submitted': False,
                     'opened': False,
                     'clicked': False,
-                    'reported': False
+                    'reported': False,
+                    'risk': 0
                 }
             for event in self.timeline:
                 if hasattr(event, 'email') and event.email == target.email:
@@ -1641,6 +1658,18 @@ Individuals Who Submitted: {self.total_unique_submitted}
                     if event.message == 'Clicked Link': user_map[target.email]['clicked'] = True
                     if event.message == 'Submitted Data': user_map[target.email]['submitted'] = True
                     if event.message == 'Email Reported': user_map[target.email]['reported'] = True
+            # Risk scoring: submitted > clicked > opened > reported
+            risk = 0
+            if user_map[target.email]['submitted']:
+                risk = 3
+            elif user_map[target.email]['clicked']:
+                risk = 2
+            elif user_map[target.email]['opened']:
+                risk = 1
+            if user_map[target.email]['reported']:
+                risk = max(risk-1, 0)
+            user_map[target.email]['risk'] = risk
+            risk_scores[target.email] = risk
         for email, data in user_map.items():
             user_details.append({
                 'email': email,
@@ -1652,13 +1681,15 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 'opened': data['opened'],
                 'clicked': data['clicked'],
                 'submitted': data['submitted'],
-                'reported': data['reported']
+                'reported': data['reported'],
+                'risk': data['risk']
             })
         # --- HTML/CSS/JS Output ---
         html = []
         html.append(f"<html><head><meta charset='utf-8'><title>{client_name} - Dedsec Technologies Gophish Report</title>")
         html.append("<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>")
-        html.append("<style>body{font-family:Segoe UI,Calibri,sans-serif;background:#fff;color:#111;}h1,h2{color:#111;}h1 span{color:#0056b3;}header{background:#fff;color:#111;padding:1.5em 2em 1em 2em;border-radius:12px;margin-bottom:2em;box-shadow:0 2px 12px #0001;display:flex;align-items:center;justify-content:space-between;}header .client{font-size:2em;font-weight:700;letter-spacing:1px;}header .logo{font-size:1.2em;font-weight:400;color:#888;}section{margin-bottom:2em;}table{border-collapse:collapse;width:100%;margin-bottom:2em;}th,td{border:1px solid #eee;padding:10px 8px;text-align:left;}th{background:#222;color:#fff;}tr:nth-child(even){background:#f7f7f7;}footer{margin-top:2em;font-size:1em;color:#888;text-align:center;background:#fff;padding:1em 0;border-top:1px solid #eee;}@keyframes fadein{from{opacity:0;}to{opacity:1;}}.fadein{animation:fadein 1.5s;}.user-table{margin-bottom:3em;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px #0002;}.user-header{background:#0056b3;color:#fff;padding:0.7em 1em;font-size:1.1em;cursor:pointer;user-select:none;}.user-header:hover{background:#003366;}.user-details{display:none;}.user-table.active .user-details{display:table-row-group;}.accordion-section{margin-bottom:2em;border-radius:8px;box-shadow:0 2px 8px #0001;overflow:hidden;} .accordion-header{background:#f0f0f0;color:#111;padding:1em 1.5em;font-size:1.2em;cursor:pointer;user-select:none;border-bottom:1px solid #eee;} .accordion-header:hover{background:#e0e0e0;} .accordion-content{display:none;padding:1.5em;background:#fafafa;} .accordion-section.active .accordion-content{display:block;} .confidential{font-size:1.1em;color:#e84118;font-weight:700;letter-spacing:2px;margin-top:1em;} .badge{display:inline-block;padding:0.2em 0.7em;border-radius:12px;font-size:0.95em;margin-right:0.5em;} .badge-opened{background:#ffe082;color:#111;} .badge-clicked{background:#82b1ff;color:#111;} .badge-submitted{background:#81c784;color:#111;} .badge-reported{background:#ff8a65;color:#111;} .badge-none{background:#eee;color:#888;} .row-anim{transition:background 0.3s;} .row-opened{background:#fffde7;} .row-clicked{background:#e3f2fd;} .row-submitted{background:#e8f5e9;} .row-reported{background:#fff3e0;} .row-none{background:#f7f7f7;} .pagination{display:flex;justify-content:center;align-items:center;margin:1em 0;} .pagination button{margin:0 0.2em;padding:0.4em 1em;border:none;background:#0056b3;color:#fff;border-radius:6px;cursor:pointer;} .pagination button.active{background:#222;} .pagination button:disabled{background:#eee;color:#aaa;cursor:not-allowed;}</style>")
+        html.append("<style>body{font-family:Segoe UI,Calibri,sans-serif;background:#fff;color:#111;}h1,h2{color:#111;}h1 span{color:#0056b3;}header{background:#fff;color:#111;padding:1.5em 2em 1em 2em;border-radius:12px;margin-bottom:2em;box-shadow:0 2px 12px #0001;display:flex;align-items:center;justify-content:space-between;}header .client{font-size:2em;font-weight:700;letter-spacing:1px;}header .logo{font-size:1.2em;font-weight:400;color:#888;}section{margin-bottom:2em;}table{border-collapse:collapse;width:100%;margin-bottom:2em;}th,td{border:1px solid #eee;padding:10px 8px;text-align:left;}th{background:#222;color:#fff;}tr:nth-child(even){background:#f7f7f7;}footer{margin-top:2em;font-size:1em;color:#888;text-align:center;background:#fff;padding:1em 0;border-top:1px solid #eee;}@keyframes fadein{from{opacity:0;}to{opacity:1;}}.fadein{animation:fadein 1.5s;}.user-table{margin-bottom:3em;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px #0002;}.user-header{background:#0056b3;color:#fff;padding:0.7em 1em;font-size:1.1em;cursor:pointer;user-select:none;}.user-header:hover{background:#003366;}.user-details{display:none;}.user-table.active .user-details{display:table-row-group;}.accordion-section{margin-bottom:2em;border-radius:8px;box-shadow:0 2px 8px #0001;overflow:hidden;} .accordion-header{background:#f0f0f0;color:#111;padding:1em 1.5em;font-size:1.2em;cursor:pointer;user-select:none;border-bottom:1px solid #eee;} .accordion-header:hover{background:#e0e0e0;} .accordion-content{display:none;padding:1.5em;background:#fafafa;} .accordion-section.active .accordion-content{display:block;} .confidential{font-size:1.1em;color:#e84118;font-weight:700;letter-spacing:2px;margin-top:1em;} .badge{display:inline-block;padding:0.2em 0.7em;border-radius:12px;font-size:0.95em;margin-right:0.5em;} .badge-opened{background:#ffe082;color:#111;} .badge-clicked{background:#82b1ff;color:#111;} .badge-submitted{background:#81c784;color:#111;} .badge-reported{background:#ff8a65;color:#111;} .badge-none{background:#eee;color:#888;} .row-anim{transition:background 0.3s;} .row-opened{background:#fffde7;} .row-clicked{background:#e3f2fd;} .row-submitted{background:#e8f5e9;} .row-reported{background:#fff3e0;} .row-none{background:#f7f7f7;} .pagination{display:flex;justify-content:center;align-items:center;margin:1em 0;} .pagination button{margin:0 0.2em;padding:0.4em 1em;border:none;background:#0056b3;color:#fff;border-radius:6px;cursor:pointer;} .pagination button.active{background:#222;} .pagination button:disabled{background:#eee;color:#aaa;cursor:not-allowed;}.risk-badge{padding:0.2em 0.7em;border-radius:12px;font-size:0.95em;margin-right:0.5em;font-weight:700;}.risk-0{background:#b2bec3;color:#222;} .risk-1{background:#ffe082;color:#222;} .risk-2{background:#fab1a0;color:#222;} .risk-3{background:#e84118;color:#fff;}</style>")
+        html.append("<script src='https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels'></script>")
         html.append("<script>function toggleAccordion(id){var s=document.getElementById(id);if(s.classList.contains('active')){s.classList.remove('active');}else{s.classList.add('active');}}function toggleUserTable(id){var t=document.getElementById(id);if(t.classList.contains('active')){t.classList.remove('active');}else{t.classList.add('active');}}</script>")
         html.append("</head><body class='fadein'>")
         html.append(f"<header><div class='client'>{client_name}</div><div class='logo'>Dedsec Technologies Gophish Report</div></header>")
@@ -1690,6 +1721,15 @@ Individuals Who Submitted: {self.total_unique_submitted}
         for dom, cnt in domain_counter.most_common(5):
             html.append(f"<li>{dom}: {cnt} users</li>")
         html.append("</ol>")
+        # Device/Geo stats
+        html.append("<h4>Top Devices</h4><ol>")
+        for dev, cnt in device_counter.most_common(5):
+            html.append(f"<li>{dev}: {cnt} users</li>")
+        html.append("</ol>")
+        html.append("<h4>Top Locations (IP)</h4><ol>")
+        for geo, cnt in geo_counter.most_common(5):
+            html.append(f"<li>{geo}: {cnt} users</li>")
+        html.append("</ol>")
         # Entropy chart
         html.append("<canvas id='entropyChart' height='60'></canvas>")
         html.append("<canvas id='summaryChart' height='80'></canvas><canvas id='pieChart' height='80'></canvas>")
@@ -1703,9 +1743,9 @@ Individuals Who Submitted: {self.total_unique_submitted}
         html.append("</div></div>")
         # Summary Table Section (Accordion)
         html.append("<div class='accordion-section' id='summary-table'><div class='accordion-header' onclick=\"toggleAccordion('summary-table')\">Summary of Events</div><div class='accordion-content'>")
-        # Filter controls
+        # Advanced Filter controls
         html.append("""
-        <div style='margin-bottom:1em;'>
+        <div style='margin-bottom:1em;display:flex;flex-wrap:wrap;gap:1em;'>
             <label><b>Filter:</b></label>
             <select id='filter-type' onchange='filterTable()'>
                 <option value='all'>All</option>
@@ -1713,21 +1753,42 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 <option value='clicked'>Clicked</option>
                 <option value='submitted'>Submitted</option>
                 <option value='reported'>Reported</option>
+                <option value='risk'>Risk</option>
                 <option value='os'>OS</option>
                 <option value='browser'>Browser</option>
+                <option value='domain'>Domain</option>
             </select>
             <input type='text' id='filter-value' placeholder='Enter value...' onkeyup='filterTable()' style='margin-left:0.5em;'>
+            <label style='margin-left:1em;'><b>Page Size:</b></label>
+            <select id='page-size' onchange='paginateTable("summary-table-main",parseInt(this.value))'>
+                <option value='10'>10</option>
+                <option value='25'>25</option>
+                <option value='50'>50</option>
+            </select>
+            <button onclick='exportTableToCSV()' style='margin-left:1em;'>Export CSV</button>
         </div>
         """)
-        html.append("<table id='summary-table-main'><tr><th>Email Address</th><th>Open</th><th>Click</th><th>Data</th><th>Report</th><th>OS</th><th>Browser</th></tr>")
+        html.append("<table id='summary-table-main'><tr><th>Email Address</th><th>Open</th><th>Click</th><th>Data</th><th>Report</th><th>Risk</th><th>OS</th><th>Browser</th></tr>")
         ordered_results = sorted(self.campaign_results_summary, key=lambda k: k['email'])
         for target in ordered_results:
-            row = f"<tr>"
+            risk = risk_scores.get(target['email'], 0)
+            risk_badge = f"<span class='risk-badge risk-{risk}'>Risk {risk}</span>"
+            row_class = 'row-none'
+            if target['submitted']:
+                row_class = 'row-submitted'
+            elif target['clicked']:
+                row_class = 'row-clicked'
+            elif target['opened']:
+                row_class = 'row-opened'
+            elif target['reported']:
+                row_class = 'row-reported'
+            row = f"<tr class='row-anim {row_class}'>"
             row += f"<td>{target['email']}</td>"
-            row += f"<td>{'✔️' if target['opened'] else '❌'}</td>"
-            row += f"<td>{'✔️' if target['clicked'] else '❌'}</td>"
-            row += f"<td>{'✔️' if target['submitted'] else '❌'}</td>"
-            row += f"<td>{'✔️' if target['reported'] else '❌'}</td>"
+            row += f"<td>{'\u2714\ufe0f' if target['opened'] else '\u274c'}</td>"
+            row += f"<td>{'\u2714\ufe0f' if target['clicked'] else '\u274c'}</td>"
+            row += f"<td>{'\u2714\ufe0f' if target['submitted'] else '\u274c'}</td>"
+            row += f"<td>{'\u2714\ufe0f' if target['reported'] else '\u274c'}</td>"
+            row += f"<td>{risk_badge}</td>"
             os_details = browser_details = "N/A"
             if target['email'] in self.targets_clicked:
                 for event in self.timeline:
@@ -1739,7 +1800,7 @@ Individuals Who Submitted: {self.total_unique_submitted}
             row += f"<td>{os_details}</td><td>{browser_details}</td></tr>"
             html.append(row)
         html.append("</table></div></div>")
-        # Add filter script
+        # Add advanced filter and pagination script
         html.append("""
         <script>
         function filterTable() {
@@ -1751,17 +1812,19 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 var cells = rows[i].getElementsByTagName('td');
                 var show = true;
                 if (type !== 'all' && value) {
-                    if (type === 'opened' && cells[1].textContent.indexOf('✔️') === -1) show = false;
-                    if (type === 'clicked' && cells[2].textContent.indexOf('✔️') === -1) show = false;
-                    if (type === 'submitted' && cells[3].textContent.indexOf('✔️') === -1) show = false;
-                    if (type === 'reported' && cells[4].textContent.indexOf('✔️') === -1) show = false;
-                    if (type === 'os' && cells[5].textContent.toLowerCase().indexOf(value) === -1) show = false;
-                    if (type === 'browser' && cells[6].textContent.toLowerCase().indexOf(value) === -1) show = false;
+                    if (type === 'opened' && cells[1].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
+                    if (type === 'clicked' && cells[2].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
+                    if (type === 'submitted' && cells[3].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
+                    if (type === 'reported' && cells[4].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
+                    if (type === 'risk' && cells[5].textContent.toLowerCase().indexOf(value) === -1) show = false;
+                    if (type === 'os' && cells[6].textContent.toLowerCase().indexOf(value) === -1) show = false;
+                    if (type === 'browser' && cells[7].textContent.toLowerCase().indexOf(value) === -1) show = false;
+                    if (type === 'domain' && cells[0].textContent.split('@')[1] && cells[0].textContent.split('@')[1].toLowerCase().indexOf(value) === -1) show = false;
                 } else if (type !== 'all') {
-                    if (type === 'opened' && cells[1].textContent.indexOf('✔️') === -1) show = false;
-                    if (type === 'clicked' && cells[2].textContent.indexOf('✔️') === -1) show = false;
-                    if (type === 'submitted' && cells[3].textContent.indexOf('✔️') === -1) show = false;
-                    if (type === 'reported' && cells[4].textContent.indexOf('✔️') === -1) show = false;
+                    if (type === 'opened' && cells[1].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
+                    if (type === 'clicked' && cells[2].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
+                    if (type === 'submitted' && cells[3].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
+                    if (type === 'reported' && cells[4].textContent.indexOf('\u2714\ufe0f') === -1) show = false;
                 } else if (value) {
                     var found = false;
                     for (var j = 0; j < cells.length; j++) {
@@ -1772,12 +1835,45 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 rows[i].style.display = show ? '' : 'none';
             }
         }
+        function paginateTable(tableId, pageSize){
+            var table=document.getElementById(tableId);var rows=table.getElementsByTagName('tr');var page=1;
+            function showPage(p){for(var i=1;i<rows.length;i++)rows[i].style.display=(i>=(p-1)*pageSize+1&&i<p*pageSize+1)?'':'none';}
+            function createPagination(){var n=Math.ceil((rows.length-1)/pageSize);var pag=document.createElement('div');pag.className='pagination';for(var i=1;i<=n;i++){var btn=document.createElement('button');btn.innerText=i;btn.onclick=(function(i){return function(){page=i;showPage(page);}})(i);pag.appendChild(btn);}table.parentNode.insertBefore(pag,table.nextSibling);}
+            showPage(page);createPagination();}
+        window.onload=function(){paginateTable('summary-table-main',parseInt(document.getElementById('page-size').value));};
+        function exportTableToCSV() {
+            var csv = [];
+            var rows = document.querySelectorAll('#summary-table-main tr');
+            for (var i = 0; i < rows.length; i++) {
+                var row = [], cols = rows[i].querySelectorAll('td, th');
+                for (var j = 0; j < cols.length; j++) row.push('"' + cols[j].innerText.replace(/"/g, '""') + '"');
+                csv.push(row.join(','));
+            }
+            var csvFile = new Blob([csv.join('\n')], {type: 'text/csv'});
+            var downloadLink = document.createElement('a');
+            downloadLink.download = 'summary_table.csv';
+            downloadLink.href = window.URL.createObjectURL(csvFile);
+            downloadLink.style.display = 'none';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+        }
         </script>
         """)
         # Per-user details Section (Accordion)
         html.append("<div class='accordion-section' id='user-details'><div class='accordion-header' onclick=\"toggleAccordion('user-details')\">Recipient Details</div><div class='accordion-content'>")
+        html.append("<div style='margin-bottom:1em;'><label><b>Filter Recipients:</b></label> <input type='text' id='user-filter' onkeyup='filterUsers()' placeholder='Search by name, email, risk, action...'></div>")
         for idx, user in enumerate(user_details):
-            html.append(f"<div class='user-table' id='user-table-{idx}'><div class='user-header' onclick=\"toggleUserTable('user-table-{idx}')\">{user['first_name']} {user['last_name']} ({user['email']}) - {user['position']}</div>")
+            risk_badge = f"<span class='risk-badge risk-{user['risk']}'>Risk {user['risk']}</span>"
+            user_row_class = 'row-none'
+            if user['submitted']:
+                user_row_class = 'row-submitted'
+            elif user['clicked']:
+                user_row_class = 'row-clicked'
+            elif user['opened']:
+                user_row_class = 'row-opened'
+            elif user['reported']:
+                user_row_class = 'row-reported'
+            html.append(f"<div class='user-table {user_row_class}' id='user-table-{idx}'><div class='user-header' onclick=\"toggleUserTable('user-table-{idx}')\">{user['first_name']} {user['last_name']} ({user['email']}) - {user['position']} {risk_badge}</div>")
             html.append("<table class='user-details'><tr><th>Time</th><th>Event</th><th>IP</th><th>Browser</th><th>OS</th><th>Payload</th></tr>")
             for event in user['events']:
                 details = event['details'] if isinstance(event['details'], dict) else {}
@@ -1793,6 +1889,7 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 html.append(f"<tr class='event-row'><td>{event['time']}</td><td>{event['message']}</td><td>{ip}</td><td>{browser}</td><td>{os}</td><td>{payload_str}</td></tr>")
             html.append("</table></div>")
         html.append("</div></div>")
+        html.append("<script>function filterUsers(){var val=document.getElementById('user-filter').value.toLowerCase();var tables=document.querySelectorAll('.user-table');for(var i=0;i<tables.length;i++){var t=tables[i];var header=t.querySelector('.user-header').textContent.toLowerCase();t.style.display=header.indexOf(val)!==-1?'':'none';}}</script>")
         html.append(f"<footer><span class='confidential'>Confidential</span><br>Generated for {client_name} by <b>Dedsec Technologies LLP</b> &copy; {datetime.datetime.now().year}</footer>")
         # Chart.js script
         html.append(f"<script>const ctx=document.getElementById('summaryChart').getContext('2d');new Chart(ctx,{{type:'bar',data:{{labels:['Total','Opened','Clicked','Reported','Submitted'],datasets:[{{label:'Recipients',data:[{total_targets},{total_opened},{total_clicked},{total_reported},{total_submitted}],backgroundColor:['#0056b3','#0097e6','#e84118','#44bd32','#fbc531']}}]}},options:{{responsive:true,plugins:{{legend:{{display:false}}}}}});const ctx2=document.getElementById('pieChart').getContext('2d');new Chart(ctx2,{{type:'pie',data:{{labels:['Opened','Clicked','Reported','Submitted'],datasets:[{{data:[{total_opened},{total_clicked},{total_reported},{total_submitted}],backgroundColor:['#0097e6','#e84118','#44bd32','#fbc531']}}]}},options:{{responsive:true}}}});</script>")
@@ -1830,6 +1927,14 @@ Individuals Who Submitted: {self.total_unique_submitted}
             html.append(f"<li><b>{pattern_stats['reused']}</b> reused passwords detected. Recommend password reuse monitoring.</li>")
         if total_clicked>0 and total_reported/total_clicked<0.5:
             html.append("<li>Reporting rate is low compared to click rate. Recommend awareness campaigns.</li>")
+        if sum(opened)>0 and sum(clicked)/sum(opened)<0.2:
+            html.append("<li>Click rate is low compared to open rate. Email content may not be enticing enough or users are cautious.</li>")
+        if sum(submitted)>0 and sum(submitted)/sum(clicked)<0.2:
+            html.append("<li>Submission rate is low compared to click rate. Landing page may not be convincing or users are cautious.</li>")
+        if len(device_counter)>1:
+            html.append("<li>Multiple device types detected. Ensure security awareness covers all device types.</li>")
+        if len(geo_counter)>1:
+            html.append("<li>Multiple locations detected. Consider geo-targeted training or investigation.</li>")
         html.append("</ul></div></div>")
         html.append("</body></html>")
         with open(self.output_html_report, "w", encoding="utf-8") as f:
