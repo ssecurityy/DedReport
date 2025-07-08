@@ -1658,6 +1658,7 @@ Individuals Who Submitted: {self.total_unique_submitted}
         html = []
         html.append(f"<html><head><meta charset='utf-8'><title>{client_name} - Dedsec Technologies Gophish Report</title>")
         html.append("<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>")
+        html.append("<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'>")
         html.append("<style>body{font-family:Segoe UI,Calibri,sans-serif;background:#fff;color:#111;}h1,h2{color:#111;}h1 span{color:#0056b3;}header{background:#fff;color:#111;padding:1.5em 2em 1em 2em;border-radius:12px;margin-bottom:2em;box-shadow:0 2px 12px #0001;display:flex;align-items:center;justify-content:space-between;}header .client{font-size:2em;font-weight:700;letter-spacing:1px;}header .logo{font-size:1.2em;font-weight:400;color:#888;}section{margin-bottom:2em;}table{border-collapse:collapse;width:100%;margin-bottom:2em;}th,td{border:1px solid #eee;padding:10px 8px;text-align:left;}th{background:#222;color:#fff;}tr:nth-child(even){background:#f7f7f7;}footer{margin-top:2em;font-size:1em;color:#888;text-align:center;background:#fff;padding:1em 0;border-top:1px solid #eee;}@keyframes fadein{from{opacity:0;}to{opacity:1;}}.fadein{animation:fadein 1.5s;}.user-table{margin-bottom:3em;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px #0002;}.user-header{background:#0056b3;color:#fff;padding:0.7em 1em;font-size:1.1em;cursor:pointer;user-select:none;}.user-header:hover{background:#003366;}.user-details{display:none;}.user-table.active .user-details{display:table-row-group;}.accordion-section{margin-bottom:2em;border-radius:8px;box-shadow:0 2px 8px #0001;overflow:hidden;} .accordion-header{background:#f0f0f0;color:#111;padding:1em 1.5em;font-size:1.2em;cursor:pointer;user-select:none;border-bottom:1px solid #eee;} .accordion-header:hover{background:#e0e0e0;} .accordion-content{display:none;padding:1.5em;background:#fafafa;} .accordion-section.active .accordion-content{display:block;} .confidential{font-size:1.1em;color:#e84118;font-weight:700;letter-spacing:2px;margin-top:1em;} .badge{display:inline-block;padding:0.2em 0.7em;border-radius:12px;font-size:0.95em;margin-right:0.5em;} .badge-opened{background:#ffe082;color:#111;} .badge-clicked{background:#82b1ff;color:#111;} .badge-submitted{background:#81c784;color:#111;} .badge-reported{background:#ff8a65;color:#111;} .badge-none{background:#eee;color:#888;} .row-anim{transition:background 0.3s;} .row-opened{background:#fffde7;} .row-clicked{background:#e3f2fd;} .row-submitted{background:#e8f5e9;} .row-reported{background:#fff3e0;} .row-none{background:#f7f7f7;} .pagination{display:flex;justify-content:center;align-items:center;margin:1em 0;} .pagination button{margin:0 0.2em;padding:0.4em 1em;border:none;background:#0056b3;color:#fff;border-radius:6px;cursor:pointer;} .pagination button.active{background:#222;} .pagination button:disabled{background:#eee;color:#aaa;cursor:not-allowed;}</style>")
         html.append("<script>function toggleAccordion(id){var s=document.getElementById(id);if(s.classList.contains('active')){s.classList.remove('active');}else{s.classList.add('active');}}function toggleUserTable(id){var t=document.getElementById(id);if(t.classList.contains('active')){t.classList.remove('active');}else{t.classList.add('active');}}</script>")
         html.append("</head><body class='fadein'>")
@@ -1693,7 +1694,11 @@ Individuals Who Submitted: {self.total_unique_submitted}
         # Entropy chart
         html.append("<canvas id='entropyChart' height='60'></canvas>")
         html.append("<canvas id='summaryChart' height='80'></canvas><canvas id='pieChart' height='80'></canvas>")
+        # Domain breakdown chart
+        html.append("<canvas id='domainChart' height='60'></canvas>")
         html.append("</div></div>")
+        # Chart.js scripts for entropy and domain breakdown
+        html.append(f"<script>const entropyCtx=document.getElementById('entropyChart').getContext('2d');new Chart(entropyCtx,{{type:'bar',data:{{labels:[...Array({len(password_entropy)}).keys()].map(i=>i+1),],datasets:[{{label:'Password Entropy',data:{json.dumps(password_entropy)},backgroundColor:'#8884d8'}}]}},options:{{responsive:true,plugins:{{legend:{{display:false}}}}}});const domainCtx=document.getElementById('domainChart').getContext('2d');new Chart(domainCtx,{{type:'bar',data:{{labels:{json.dumps([dom for dom, _ in domain_counter.most_common(5)])},datasets:[{{label:'Users',data:{json.dumps([cnt for _, cnt in domain_counter.most_common(5)])},backgroundColor:'#00b894'}}]}},options:{{responsive:true,plugins:{{legend:{{display:false}}}}}});</script>")
         # ... rest of the report (campaign details, summary table with filters/pagination/color, recipient details with badges, etc.) ...
         # (The rest of the code would follow the same pattern as previous steps, with advanced UI/UX, filters, pagination, and color coding.)
         # ... existing code ...
@@ -1705,7 +1710,7 @@ Individuals Who Submitted: {self.total_unique_submitted}
         html.append("<div class='accordion-section' id='summary-table'><div class='accordion-header' onclick=\"toggleAccordion('summary-table')\">Summary of Events</div><div class='accordion-content'>")
         # Filter controls
         html.append("""
-        <div style='margin-bottom:1em;'>
+        <div style='margin-bottom:1em;display:flex;flex-wrap:wrap;gap:1em;'>
             <label><b>Filter:</b></label>
             <select id='filter-type' onchange='filterTable()'>
                 <option value='all'>All</option>
@@ -1715,15 +1720,37 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 <option value='reported'>Reported</option>
                 <option value='os'>OS</option>
                 <option value='browser'>Browser</option>
+                <option value='domain'>Domain</option>
             </select>
             <input type='text' id='filter-value' placeholder='Enter value...' onkeyup='filterTable()' style='margin-left:0.5em;'>
+            <label style='margin-left:1em;'><b>Show:</b></label>
+            <select id='page-size' onchange='paginateTable("summary-table-main",parseInt(this.value))'>
+                <option value='10'>10</option>
+                <option value='25'>25</option>
+                <option value='50'>50</option>
+            </select>
         </div>
         """)
-        html.append("<table id='summary-table-main'><tr><th>Email Address</th><th>Open</th><th>Click</th><th>Data</th><th>Report</th><th>OS</th><th>Browser</th></tr>")
+        html.append("<table id='summary-table-main'><tr><th>Email Address</th><th>Open</th><th>Click</th><th>Data</th><th>Report</th><th>OS</th><th>Browser</th><th>Domain</th></tr>")
         ordered_results = sorted(self.campaign_results_summary, key=lambda k: k['email'])
         for target in ordered_results:
-            row = f"<tr>"
-            row += f"<td>{target['email']}</td>"
+            domain = target['email'].split('@')[-1] if '@' in target['email'] else ''
+            row_class = 'row-none'
+            badges = ''
+            if target['opened'] and target['clicked'] and target['submitted']:
+                row_class = 'row-submitted'
+                badges = "<span class='badge badge-opened'>Opened</span><span class='badge badge-clicked'>Clicked</span><span class='badge badge-submitted'>Submitted</span>"
+            elif target['opened'] and target['clicked']:
+                row_class = 'row-clicked'
+                badges = "<span class='badge badge-opened'>Opened</span><span class='badge badge-clicked'>Clicked</span>"
+            elif target['opened']:
+                row_class = 'row-opened'
+                badges = "<span class='badge badge-opened'>Opened</span>"
+            elif target['reported']:
+                row_class = 'row-reported'
+                badges = "<span class='badge badge-reported'>Reported</span>"
+            row = f"<tr class='{row_class}'>"
+            row += f"<td>{target['email']} {badges}</td>"
             row += f"<td>{'✔️' if target['opened'] else '❌'}</td>"
             row += f"<td>{'✔️' if target['clicked'] else '❌'}</td>"
             row += f"<td>{'✔️' if target['submitted'] else '❌'}</td>"
@@ -1736,10 +1763,10 @@ Individuals Who Submitted: {self.total_unique_submitted}
                         browser_details = user_agent.browser.family + " " + user_agent.browser.version_string
                         os_details = user_agent.os.family + " " + user_agent.os.version_string
                         break
-            row += f"<td>{os_details}</td><td>{browser_details}</td></tr>"
+            row += f"<td>{os_details}</td><td>{browser_details}</td><td>{domain}</td></tr>"
             html.append(row)
         html.append("</table></div></div>")
-        # Add filter script
+        # Add advanced filter and pagination script
         html.append("""
         <script>
         function filterTable() {
@@ -1757,6 +1784,7 @@ Individuals Who Submitted: {self.total_unique_submitted}
                     if (type === 'reported' && cells[4].textContent.indexOf('✔️') === -1) show = false;
                     if (type === 'os' && cells[5].textContent.toLowerCase().indexOf(value) === -1) show = false;
                     if (type === 'browser' && cells[6].textContent.toLowerCase().indexOf(value) === -1) show = false;
+                    if (type === 'domain' && cells[7].textContent.toLowerCase().indexOf(value) === -1) show = false;
                 } else if (type !== 'all') {
                     if (type === 'opened' && cells[1].textContent.indexOf('✔️') === -1) show = false;
                     if (type === 'clicked' && cells[2].textContent.indexOf('✔️') === -1) show = false;
@@ -1772,6 +1800,12 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 rows[i].style.display = show ? '' : 'none';
             }
         }
+        function paginateTable(tableId, pageSize){
+            var table=document.getElementById(tableId);var rows=table.getElementsByTagName('tr');var page=1;
+            function showPage(p){for(var i=1;i<rows.length;i++)rows[i].style.display=(i>=(p-1)*pageSize+1&&i<p*pageSize+1)?'':'none';}
+            function createPagination(){var n=Math.ceil((rows.length-1)/pageSize);var pag=document.createElement('div');pag.className='pagination';for(var i=1;i<=n;i++){var btn=document.createElement('button');btn.innerText=i;btn.onclick=(function(i){return function(){page=i;showPage(page);}})(i);pag.appendChild(btn);}table.parentNode.insertBefore(pag,table.nextSibling);}
+            showPage(page);createPagination();}
+        window.onload=function(){paginateTable('summary-table-main',parseInt(document.getElementById('page-size').value));};
         </script>
         """)
         # Per-user details Section (Accordion)
