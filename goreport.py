@@ -1566,9 +1566,18 @@ Individuals Who Submitted: {self.total_unique_submitted}
         password_users = defaultdict(list)
         password_entropy = []
         domain_counter = Counter()
+        department_counter = Counter()
+        geo_counter = Counter()
+        time_to_open = []
+        time_to_click = []
+        time_to_submit = []
         for target in self.results:
             domain = target.email.split('@')[-1] if '@' in target.email else ''
             domain_counter[domain] += 1
+            if hasattr(target, 'department'):
+                department_counter[target.department] += 1
+            if hasattr(target, 'location'):
+                geo_counter[target.location] += 1
         for user in self.results:
             for event in self.timeline:
                 if hasattr(event, 'email') and event.email == user.email:
@@ -1622,6 +1631,8 @@ Individuals Who Submitted: {self.total_unique_submitted}
                     'first_name': target.first_name,
                     'last_name': target.last_name,
                     'position': getattr(target, 'position', ''),
+                    'department': getattr(target, 'department', ''),
+                    'location': getattr(target, 'location', ''),
                     'ip': getattr(target, 'ip', ''),
                     'events': [],
                     'submitted': False,
@@ -1647,6 +1658,8 @@ Individuals Who Submitted: {self.total_unique_submitted}
                 'first_name': data['first_name'],
                 'last_name': data['last_name'],
                 'position': data['position'],
+                'department': data['department'],
+                'location': data['location'],
                 'ip': data['ip'],
                 'events': data['events'],
                 'opened': data['opened'],
@@ -1656,9 +1669,10 @@ Individuals Who Submitted: {self.total_unique_submitted}
             })
         # --- HTML/CSS/JS Output ---
         html = []
-        html.append(f"<html><head><meta charset='utf-8'><title>{client_name} - Dedsec Technologies Gophish Report</title>")
+        html.append(f"<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width, initial-scale=1'><title>{client_name} - Dedsec Technologies Gophish Report</title>")
         html.append("<script src='https://cdn.jsdelivr.net/npm/chart.js'></script>")
-        html.append("<style>body{font-family:Segoe UI,Calibri,sans-serif;background:#fff;color:#111;}h1,h2{color:#111;}h1 span{color:#0056b3;}header{background:#fff;color:#111;padding:1.5em 2em 1em 2em;border-radius:12px;margin-bottom:2em;box-shadow:0 2px 12px #0001;display:flex;align-items:center;justify-content:space-between;}header .client{font-size:2em;font-weight:700;letter-spacing:1px;}header .logo{font-size:1.2em;font-weight:400;color:#888;}section{margin-bottom:2em;}table{border-collapse:collapse;width:100%;margin-bottom:2em;}th,td{border:1px solid #eee;padding:10px 8px;text-align:left;}th{background:#222;color:#fff;}tr:nth-child(even){background:#f7f7f7;}footer{margin-top:2em;font-size:1em;color:#888;text-align:center;background:#fff;padding:1em 0;border-top:1px solid #eee;}@keyframes fadein{from{opacity:0;}to{opacity:1;}}.fadein{animation:fadein 1.5s;}.user-table{margin-bottom:3em;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px #0002;}.user-header{background:#0056b3;color:#fff;padding:0.7em 1em;font-size:1.1em;cursor:pointer;user-select:none;}.user-header:hover{background:#003366;}.user-details{display:none;}.user-table.active .user-details{display:table-row-group;}.accordion-section{margin-bottom:2em;border-radius:8px;box-shadow:0 2px 8px #0001;overflow:hidden;} .accordion-header{background:#f0f0f0;color:#111;padding:1em 1.5em;font-size:1.2em;cursor:pointer;user-select:none;border-bottom:1px solid #eee;} .accordion-header:hover{background:#e0e0e0;} .accordion-content{display:none;padding:1.5em;background:#fafafa;} .accordion-section.active .accordion-content{display:block;} .confidential{font-size:1.1em;color:#e84118;font-weight:700;letter-spacing:2px;margin-top:1em;} .badge{display:inline-block;padding:0.2em 0.7em;border-radius:12px;font-size:0.95em;margin-right:0.5em;} .badge-opened{background:#ffe082;color:#111;} .badge-clicked{background:#82b1ff;color:#111;} .badge-submitted{background:#81c784;color:#111;} .badge-reported{background:#ff8a65;color:#111;} .badge-none{background:#eee;color:#888;} .row-anim{transition:background 0.3s;} .row-opened{background:#fffde7;} .row-clicked{background:#e3f2fd;} .row-submitted{background:#e8f5e9;} .row-reported{background:#fff3e0;} .row-none{background:#f7f7f7;} .pagination{display:flex;justify-content:center;align-items:center;margin:1em 0;} .pagination button{margin:0 0.2em;padding:0.4em 1em;border:none;background:#0056b3;color:#fff;border-radius:6px;cursor:pointer;} .pagination button.active{background:#222;} .pagination button:disabled{background:#eee;color:#aaa;cursor:not-allowed;}</style>")
+        html.append("<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css'/>")
+        html.append("<style>body{font-family:Segoe UI,Calibri,sans-serif;background:#fff;color:#111;margin:0;padding:0;}h1,h2{color:#111;}h1 span{color:#0056b3;}header{background:#fff;color:#111;padding:1.5em 2em 1em 2em;border-radius:12px;margin-bottom:2em;box-shadow:0 2px 12px #0001;display:flex;align-items:center;justify-content:space-between;}header .client{font-size:2em;font-weight:700;letter-spacing:1px;}header .logo{font-size:1.2em;font-weight:400;color:#888;}section{margin-bottom:2em;}table{border-collapse:collapse;width:100%;margin-bottom:2em;}th,td{border:1px solid #eee;padding:10px 8px;text-align:left;}th{background:#222;color:#fff;}tr:nth-child(even){background:#f7f7f7;}footer{margin-top:2em;font-size:1em;color:#888;text-align:center;background:#fff;padding:1em 0;border-top:1px solid #eee;}@keyframes fadein{from{opacity:0;}to{opacity:1;}}.fadein{animation:fadein 1.5s;}.user-table{margin-bottom:3em;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px #0002;}.user-header{background:#0056b3;color:#fff;padding:0.7em 1em;font-size:1.1em;cursor:pointer;user-select:none;}.user-header:hover{background:#003366;}.user-details{display:none;}.user-table.active .user-details{display:table-row-group;}.accordion-section{margin-bottom:2em;border-radius:8px;box-shadow:0 2px 8px #0001;overflow:hidden;} .accordion-header{background:#f0f0f0;color:#111;padding:1em 1.5em;font-size:1.2em;cursor:pointer;user-select:none;border-bottom:1px solid #eee;} .accordion-header:hover{background:#e0e0e0;} .accordion-content{display:none;padding:1.5em;background:#fafafa;} .accordion-section.active .accordion-content{display:block;} .confidential{font-size:1.1em;color:#e84118;font-weight:700;letter-spacing:2px;margin-top:1em;} .badge{display:inline-block;padding:0.2em 0.7em;border-radius:12px;font-size:0.95em;margin-right:0.5em;} .badge-opened{background:#ffe082;color:#111;} .badge-clicked{background:#82b1ff;color:#111;} .badge-submitted{background:#81c784;color:#111;} .badge-reported{background:#ff8a65;color:#111;} .badge-none{background:#eee;color:#888;} .row-anim{transition:background 0.3s;} .row-opened{background:#fffde7;} .row-clicked{background:#e3f2fd;} .row-submitted{background:#e8f5e9;} .row-reported{background:#fff3e0;} .row-none{background:#f7f7f7;} .pagination{display:flex;justify-content:center;align-items:center;margin:1em 0;} .pagination button{margin:0 0.2em;padding:0.4em 1em;border:none;background:#0056b3;color:#fff;border-radius:6px;cursor:pointer;} .pagination button.active{background:#222;} .pagination button:disabled{background:#eee;color:#aaa;cursor:not-allowed;}@media (max-width: 800px){header{flex-direction:column;align-items:flex-start;padding:1em;}table,th,td{font-size:0.95em;} .user-header{font-size:1em;}}</style>")
         html.append("<script>function toggleAccordion(id){var s=document.getElementById(id);if(s.classList.contains('active')){s.classList.remove('active');}else{s.classList.add('active');}}function toggleUserTable(id){var t=document.getElementById(id);if(t.classList.contains('active')){t.classList.remove('active');}else{t.classList.add('active');}}</script>")
         html.append("</head><body class='fadein'>")
         html.append(f"<header><div class='client'>{client_name}</div><div class='logo'>Dedsec Technologies Gophish Report</div></header>")
